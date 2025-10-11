@@ -1,0 +1,19 @@
+.{
+    .name = .fabrum_renderer_thorvg,
+    .version = "0.0.0",
+    .fingerprint = 0xa78493b4ad97e58b,
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .fabrum = .{
+            .path = "../zig-layout",
+        },
+        .thorvg = .{
+            .path = "../zig-thorvg-bindings",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
