@@ -200,14 +200,14 @@ fn renderText(self: *Renderer, bbox: Rect, text_content: *const content.Text) !v
         );
 
         const paint = text_obj.asPaint();
-
+        const bounds = paint.getBounds(false);
         paint.translate(
             bbox.x + switch (text_content.style.alignment) {
                 .left => 0,
                 .center => (bbox.w - line.size.x) / 2,
                 .right => bbox.w - line.size.x,
-            },
-            y_pos,
+            } - bounds.x,
+            y_pos - bounds.y,
         );
 
         y_pos += line.size.y;
