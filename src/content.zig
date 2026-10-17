@@ -40,7 +40,7 @@ pub const Text = fabrum.TextContent(
                 self.state.buf[text.len] = 0;
 
                 self.text.setText(self.state.buf[0..text.len :0]);
-                self.text.setFont(if (style.font_name) |f| f.ptr else null, style.font_size, null) catch return error.MeasureFailed;
+                self.text.setFont(if (style.font_family) |f| f.ptr else null, style.font_size, null) catch return error.MeasureFailed;
 
                 const bounds = self.text.asPaint().getBounds(false);
 

@@ -189,7 +189,7 @@ fn renderText(self: *Renderer, bbox: Rect, text_content: *const content.Text) !v
         self.text_buf[line.text.len] = 0;
 
         text_obj.setText(self.text_buf[0..line.text.len :0]);
-        try text_obj.setFont(if (text_content.style.font_name) |f| f.ptr else null, text_content.style.font_size, null);
+        try text_obj.setFont(if (text_content.style.font_family) |f| f.ptr else null, text_content.style.font_size, null);
         text_obj.setFillColor(
             .init(
                 text_content.style.color.r,
