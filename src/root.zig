@@ -90,8 +90,9 @@ fn getActiveScene(self: *Renderer) *tvg.Scene {
     return self.scene;
 }
 
-fn renderRectangle(self: *Renderer, bbox: Rect, cr: CornerRadius, color: Color) !void {
+fn renderRectangle(self: *Renderer, bbox: Rect, corner_radius: CornerRadius, color: Color) !void {
     const shape = tvg.Shape.init() catch return;
+    const cr = corner_radius.fitted(bbox.w, bbox.h);
 
     if (isAllZero(cr)) {
         _ = shape.appendRect(bbox.x, bbox.y, bbox.w, bbox.h, 0, 0);
@@ -114,13 +115,14 @@ fn renderBorder(self: *Renderer, bbox: Rect, b: RenderCommand.Data.Border) !void
 
     if (bw.left == bw.right and bw.left == bw.top and bw.left == bw.bottom) {
         const shape = tvg.Shape.init() catch return;
+        const cr = b.corner_radius.fitted(bbox.w, bbox.h);
 
-        if (isAllZero(b.corner_radius)) {
+        if (isAllZero(cr)) {
             _ = shape.appendRect(bbox.x, bbox.y, bbox.w, bbox.h, 0, 0);
-        } else if (uniformCorner(b.corner_radius)) {
-            _ = shape.appendRect(bbox.x, bbox.y, bbox.w, bbox.h, b.corner_radius.top_left, b.corner_radius.top_left);
+        } else if (uniformCorner(cr)) {
+            _ = shape.appendRect(bbox.x, bbox.y, bbox.w, bbox.h, cr.top_left, cr.top_left);
         } else {
-            try appendRoundedRect(shape, bbox, b.corner_radius);
+            try appendRoundedRect(shape, bbox, cr);
         }
 
         shape.setStrokeWidth(bw.left);
