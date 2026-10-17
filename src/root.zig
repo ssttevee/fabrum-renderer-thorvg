@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator) !Renderer {
 
     return .{
         .scene = scene,
-        .clip_stack = .{},
+        .clip_stack = .empty,
         .allocator = allocator,
         .text_context = try content.Text.Context.init(allocator),
     };
