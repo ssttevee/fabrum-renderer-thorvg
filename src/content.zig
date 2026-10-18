@@ -4,9 +4,9 @@ const fabrum = @import("fabrum");
 
 const Vec2 = fabrum.Vec2;
 
-pub const Text = fabrum.TextContent(
+pub const Text = fabrum.layout.text.Content(
     struct {
-        inner: fabrum.TextContentCachedContext(struct {
+        inner: fabrum.layout.text.CachedContext(struct {
             allocator: std.mem.Allocator,
             text: *tvg.Text,
             state: *State,
@@ -31,7 +31,7 @@ pub const Text = fabrum.TextContent(
                 };
             }
 
-            pub fn measureText(self: @This(), text: []const u8, style: fabrum.TextStyle) fabrum.LayoutContent.MeasureError!Vec2 {
+            pub fn measureText(self: @This(), text: []const u8, style: fabrum.layout.text.Style) fabrum.layout.Content.MeasureError!Vec2 {
                 if (self.state.buf.len < text.len) {
                     self.state.buf = self.allocator.realloc(self.state.buf, self.state.buf.len + (1 << 10)) catch return error.MeasureFailed;
                 }
@@ -61,7 +61,7 @@ pub const Text = fabrum.TextContent(
             };
         }
 
-        pub fn measureText(self: @This(), text: []const u8, style: fabrum.TextStyle) fabrum.LayoutContent.MeasureError!Vec2 {
+        pub fn measureText(self: @This(), text: []const u8, style: fabrum.layout.text.Style) fabrum.layout.Content.MeasureError!Vec2 {
             return self.inner.measureText(text, style);
         }
 

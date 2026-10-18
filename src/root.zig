@@ -9,10 +9,10 @@ pub const tvg = @import("thorvg");
 
 const Rect = fabrum.Rect;
 const Color = fabrum.Color;
-const RenderCommand = fabrum.RenderCommand;
-const CornerRadius = fabrum.CornerRadius;
-const BorderWidths = fabrum.BorderWidths;
-const LayoutContent = fabrum.LayoutContent;
+const RenderCommand = fabrum.layout.RenderCommand;
+const CornerRadius = fabrum.layout.CornerRadius;
+const BorderWidths = fabrum.layout.BorderWidths;
+const LayoutContent = fabrum.layout.Content;
 
 pub const content = @import("content.zig");
 
@@ -74,7 +74,7 @@ pub fn render(self: *Renderer, it: *RenderCommand.Iterator) !void {
     }
 }
 
-pub fn text(self: *const Renderer, s: []const u8, style: fabrum.TextStyle) content.Text {
+pub fn text(self: *const Renderer, s: []const u8, style: fabrum.layout.text.Style) content.Text {
     return .initContext(s, style, self.text_context);
 }
 

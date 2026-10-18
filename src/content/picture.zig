@@ -2,7 +2,7 @@ const std = @import("std");
 const fabrum = @import("fabrum");
 const thorvg = @import("thorvg");
 
-const LayoutContent = fabrum.LayoutContent;
+const LayoutContent = fabrum.layout.Content;
 const Vec2 = fabrum.Vec2;
 
 picture: *thorvg.Picture,
@@ -22,7 +22,7 @@ pub const FitMode = enum {
 
 pub const Style = struct {
     fit_mode: FitMode = .contain,
-    alignment: fabrum.Alignment = .center,
+    alignment: fabrum.layout.Alignment = .center,
 };
 
 const vtable = &LayoutContent.VTable{
@@ -42,7 +42,7 @@ pub fn asPictureContent(content: *const LayoutContent) ?*const Picture {
     return @fieldParentPtr("content", content);
 }
 
-fn measureFn(content: *const LayoutContent, constraints: fabrum.LayoutConstraints) LayoutContent.MeasureError!Vec2 {
+fn measureFn(content: *const LayoutContent, constraints: fabrum.layout.Constraints) LayoutContent.MeasureError!Vec2 {
     const self: *const Picture = @fieldParentPtr("content", content);
     const bounds = self.picture.asPaint().getBounds(false);
     const max_width = constraints.max_width orelse std.math.floatMax(f32);
