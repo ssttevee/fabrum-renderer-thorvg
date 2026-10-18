@@ -4,8 +4,11 @@
     .fingerprint = 0xa78493b4ad97e58b,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        // Only for this package's tests: apps give the renderer their own
+        // fabrum (see build.zig).
         .fabrum = .{
             .path = "../zig-layout",
+            .lazy = true,
         },
         .thorvg = .{
             .path = "../zig-thorvg-bindings",
