@@ -132,3 +132,23 @@ test "redrawing only the damage gives the same pixels as redrawing everything" {
         }
     }
 }
+
+test "at scale 2 a point is two pixels, and gray8 is refused" {
+    var renderer: Renderer = try .init(testing.allocator);
+    defer renderer.deinit();
+    var big: [size * size * 4 * 4]u8 align(4) = @splat(0);
+    const commands = [_]layout.RenderCommand{rectangle(8, 8, 16, 16, .black, 0)};
+    const pixels: layout.Surface.Pixels = .packedScaled(&big, size * 2, size * 2, .rgba8_premultiplied, 2);
+    try layout.draw(&renderer, &commands, .pixels, pixels, null);
+    try testing.expectEqual(255, big[(20 * size * 2 + 20) * 4 + 3]);
+    try testing.expectEqual(255, big[(46 * size * 2 + 46) * 4 + 3]);
+    try testing.expectEqual(0, big[(50 * size * 2 + 50) * 4 + 3]);
+    // damage in points
+    @memset(&big, 7);
+    try layout.draw(&renderer, &commands, .pixels, pixels, &.{.init(0, 0, 12, 12)});
+    try testing.expectEqual(255, big[(20 * size * 2 + 20) * 4 + 3]);
+    try testing.expectEqual(7, big[(30 * size * 2 + 30) * 4 + 3]);
+
+    var gray: [size * size]u8 align(4) = @splat(0);
+    try testing.expectError(error.UnsupportedFormat, layout.draw(&renderer, &commands, .pixels, .packed_(&gray, size, size, .gray8), null));
+}

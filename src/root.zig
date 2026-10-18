@@ -2,7 +2,10 @@
 //!
 //! A `fabrum.layout` renderer for `.pixels` surfaces: it rasterizes render
 //! commands (rectangles, rounded or not, borders, text, pictures, clipping)
-//! with ThorVG's software engine, into premultiplied RGBA or BGRA pixels.
+//! with ThorVG's software engine, into premultiplied RGBA or BGRA pixels,
+//! at any scale (device pixels per point). It doesn't draw `gray8`
+//! surfaces (`error.UnsupportedFormat`): use the z2d renderer for
+//! grayscale displays.
 //!
 //! ```zig
 //! var renderer: Renderer = try .init(gpa);
@@ -89,20 +92,24 @@ pub fn render(self: *Renderer, commands: []const RenderCommand, surface: Surface
         .pixels => |p| p,
         else => return error.UnsupportedSurface,
     };
+    if (pixels.format == .gray8) return error.UnsupportedFormat;
     if (pixels.stride % 4 != 0 or @intFromPtr(pixels.data.ptr) % 4 != 0) return error.UnalignedPixels;
-    const whole: [1]Rect = .{.init(0, 0, @floatFromInt(pixels.width), @floatFromInt(pixels.height))};
+    const size = pixels.pointSize();
+    const whole: [1]Rect = .{.init(0, 0, size.x, size.y)};
     for (damage orelse &whole) |region| try self.renderRegion(commands, pixels, region);
 }
 
-/// Clears and redraws one region of `pixels`: ThorVG targets just those
-/// pixels, and draws everything moved by the region's origin.
+/// Clears and redraws one region (in points) of `pixels`: ThorVG targets
+/// just those pixels, and draws everything scaled and moved by the
+/// region's origin.
 fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surface.Pixels, region: Rect) !void {
+    const s = pixels.scale;
     const w: f32 = @floatFromInt(pixels.width);
     const h: f32 = @floatFromInt(pixels.height);
-    const x0: u32 = @intFromFloat(std.math.clamp(@floor(region.x), 0, w));
-    const y0: u32 = @intFromFloat(std.math.clamp(@floor(region.y), 0, h));
-    const x1: u32 = @intFromFloat(std.math.clamp(@ceil(region.x + region.w), 0, w));
-    const y1: u32 = @intFromFloat(std.math.clamp(@ceil(region.y + region.h), 0, h));
+    const x0: u32 = @intFromFloat(std.math.clamp(@floor(region.x * s), 0, w));
+    const y0: u32 = @intFromFloat(std.math.clamp(@floor(region.y * s), 0, h));
+    const x1: u32 = @intFromFloat(std.math.clamp(@ceil((region.x + region.w) * s), 0, w));
+    const y1: u32 = @intFromFloat(std.math.clamp(@ceil((region.y + region.h) * s), 0, h));
     if (x1 <= x0 or y1 <= y0) return;
 
     const stride = pixels.stride / 4;
@@ -112,6 +119,7 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
         // little-endian word: ABGR is the bytes R, G, B, A
         .rgba8_premultiplied => .abgr8888,
         .bgra8_premultiplied => .argb8888,
+        .gray8 => unreachable, // refused by `render`
     };
     // through the C API: the binding wants the whole of the last row, which
     // a region short of the right edge doesn't have
@@ -122,9 +130,11 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
     // pushed to the canvas, which then owns it
     var pushed = false;
     errdefer if (!pushed) scene.deinit();
-    const area: Rect = .init(@floatFromInt(x0), @floatFromInt(y0), @floatFromInt(x1 - x0), @floatFromInt(y1 - y0));
+    // the area in points, for what touches it; the transform scales
+    // points to pixels and moves the area's origin to the target's
+    const area: Rect = .init(@as(f32, @floatFromInt(x0)) / s, @as(f32, @floatFromInt(y0)) / s, @as(f32, @floatFromInt(x1 - x0)) / s, @as(f32, @floatFromInt(y1 - y0)) / s);
     try self.build(scene, commands, area);
-    scene.asPaint().translate(-area.x, -area.y);
+    scene.asPaint().setTransform(&.{ .e11 = s, .e12 = 0, .e13 = -@as(f32, @floatFromInt(x0)), .e21 = 0, .e22 = s, .e23 = -@as(f32, @floatFromInt(y0)), .e31 = 0, .e32 = 0, .e33 = 1 });
 
     const canvas = self.canvas.asCanvas();
     try canvas.push(scene.asPaint());
