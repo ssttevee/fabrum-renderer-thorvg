@@ -51,34 +51,36 @@ fn measureFn(content: *const LayoutContent, constraints: fabrum.layout.Constrain
     const aspect_ratio = bounds.w / bounds.h;
     const constraint_ratio = max_width / max_height;
 
-    return switch (self.style.fit_mode) {
-        .contain => blk: {
-            if (aspect_ratio > constraint_ratio) {
-                // Width is the limiting factor
-                const width = max_width;
-                const height = width / aspect_ratio;
-                break :blk .init(width, height);
-            } else {
-                // Height is the limiting factor
-                const height = max_height;
-                const width = height * aspect_ratio;
-                break :blk .init(width, height);
-            }
-        },
-        .cover => blk: {
-            if (aspect_ratio > constraint_ratio) {
-                // Height is the limiting factor
-                const height = max_height;
-                const width = height * aspect_ratio;
-                break :blk .init(width, height);
-            } else {
-                // Width is the limiting factor
-                const width = max_width;
-                const height = width / aspect_ratio;
-                break :blk .init(width, height);
-            }
-        },
-        .crop => .init(@min(bounds.w, max_width), @min(bounds.h, max_height)),
-        .stretch => .init(max_width, max_height),
+    // whether the width is the limiting factor: a wider picture fits its
+    // width inside the box, and its height over it
+    const by_width = switch (self.style.fit_mode) {
+        .contain => aspect_ratio > constraint_ratio,
+        .cover => aspect_ratio <= constraint_ratio,
+        .crop => return .init(@min(bounds.w, max_width), @min(bounds.h, max_height)),
+        .stretch => return .init(max_width, max_height),
     };
+    return if (by_width) .init(max_width, max_width / aspect_ratio) else .init(max_height * aspect_ratio, max_height);
+}
+
+test "a picture measures to its fit mode within the constraints" {
+    try thorvg.Engines.sw.init(0);
+    defer thorvg.Engines.sw.deinit();
+    const picture = try thorvg.Picture.init();
+    defer picture.deinit();
+    // four by two, so twice as wide as tall
+    picture.loadData("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"2\"><rect width=\"4\" height=\"2\"/></svg>", "svg", true) catch |err| switch (err) {
+        error.NotSupported => return error.SkipZigTest, // no SVG loader in this build
+        else => return err,
+    };
+    var content: Picture = .{ .picture = picture };
+    const box: fabrum.layout.Constraints = .{ .max_width = 8, .max_height = 8 };
+    for ([_]struct { FitMode, Vec2 }{
+        .{ .contain, .init(8, 4) },
+        .{ .cover, .init(16, 8) },
+        .{ .crop, .init(4, 2) },
+        .{ .stretch, .init(8, 8) },
+    }) |case| {
+        content.style.fit_mode = case[0];
+        try std.testing.expectEqual(case[1], try content.content.measure(box));
+    }
 }

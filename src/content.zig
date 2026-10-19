@@ -90,3 +90,7 @@ const Measurer = struct {
 };
 
 pub const Picture = @import("content/picture.zig");
+
+test {
+    _ = Picture;
+}
