@@ -7,11 +7,13 @@
         // Only for this package's tests: apps give the renderer their own
         // fabrum (see build.zig).
         .fabrum = .{
-            .path = "../zig-layout",
+            .url = "git+https://github.com/ssttevee/fabrum#e44712671c9f53a901e21c03a41bbf0a862a0168",
+            .hash = "fabrum-0.0.0-qj9rbbNSEgAlqbl2HCbV15rQICmASbdPuPykzcOcX7KN",
             .lazy = true,
         },
         .thorvg = .{
-            .path = "../zig-thorvg-bindings",
+            .url = "git+https://github.com/ssttevee/zig-thorvg-bindings#5b0a1dd287f06eeb5dc09147f82f8c17687bdd71",
+            .hash = "thorvg-0.15.15-0-ZaqlhzkrAQA2ukwUwbgpLA-U8a7NXa4Xj_gFazPKi51R",
         },
     },
     .paths = .{
