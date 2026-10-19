@@ -123,8 +123,14 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
     };
     // through the C API: the binding wants the whole of the last row, which
     // a region short of the right edge doesn't have
-    const result = tvg.c.tvg_swcanvas_set_target(@ptrCast(self.canvas), words + @as(usize, y0) * stride + x0, stride, x1 - x0, y1 - y0, @backingInt(colorspace));
-    if (result != tvg.c.TVG_RESULT_SUCCESS) return error.SetTargetFailed;
+    switch (tvg.c.tvg_swcanvas_set_target(@ptrCast(self.canvas), words + @as(usize, y0) * stride + x0, stride, x1 - x0, y1 - y0, @backingInt(colorspace))) {
+        tvg.c.TVG_RESULT_SUCCESS => {},
+        tvg.c.TVG_RESULT_INVALID_ARGUMENT => return error.InvalidArgument,
+        // drawing: the canvas wasn't synced
+        tvg.c.TVG_RESULT_INSUFFICIENT_CONDITION => return error.InsufficientCondition,
+        tvg.c.TVG_RESULT_NOT_SUPPORTED => return error.NotSupported,
+        else => return error.SetTargetFailed,
+    }
 
     const scene = try tvg.Scene.init();
     // pushed to the canvas, which then owns it
@@ -147,7 +153,6 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
 
 /// Adds the commands that touch `area` to `root`.
 fn build(self: *Renderer, root: *tvg.Scene, commands: []const RenderCommand, area: Rect) !void {
-    self.clip_stack.clearRetainingCapacity();
     defer self.clip_stack.clearRetainingCapacity();
     // how many of the clips in force were left out, as they miss the area
     var skipped: usize = 0;
