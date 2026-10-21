@@ -23,6 +23,8 @@
 //!
 //! Text needs a font: ThorVG reads TrueType fonts, given with `loadFont`.
 //! The first one loaded is used for text without a `font_family`.
+//! `font_weight` and `letter_spacing` are not applied; load a different
+//! face under its own family name for a different weight.
 const std = @import("std");
 const fabrum = @import("fabrum");
 pub const tvg = @import("thorvg");
@@ -75,9 +77,11 @@ pub fn deinit(self: *Renderer) void {
     self.* = undefined;
 }
 
-/// Loads a TrueType font from `data`, which must outlive the renderer, as
-/// `name`, for text whose `font_family` is `name`. The first font loaded
-/// is also the one for text without a family.
+/// Loads a TrueType font from `data`, as `name`; both must outlive the
+/// renderer. Text whose `font_family` is `name` uses it; the first font
+/// loaded is also the one for text without a family. Load fonts before measuring
+/// text, since measurements are cached. ThorVG's registry is process-wide:
+/// when renderers share a font, keep its data alive until all users finish.
 pub fn loadFont(self: *Renderer, name: [:0]const u8, data: []const u8) !void {
     try tvg.loadFontData(name, data, "ttf", false);
     const fonts = self.text_context.fonts();

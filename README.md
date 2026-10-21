@@ -28,8 +28,8 @@ draws pictures (SVG, TVG, Lottie), at the cost of compiling ThorVG's C++.
 ## Adding it to an app
 
 ```sh
-zig fetch --save git+https://github.com/ssttevee/fabrum
-zig fetch --save git+https://github.com/ssttevee/fabrum-renderer-thorvg
+zig fetch --save git+https://github.com/ssttevee/fabrum#trunk
+zig fetch --save git+https://github.com/ssttevee/fabrum-renderer-thorvg#trunk
 ```
 
 **fabrum is the app's.** The renderer does not fetch fabrum itself: the app
@@ -65,9 +65,11 @@ try renderer.loadFont("Go", @embedFile("fonts/Go-Regular.ttf"));
 var rt: app.Runtime(.{ .Text = Renderer.Text }) = try .init(gpa, .{ .io = io, .text_context = renderer.text_context });
 defer rt.deinit();
 
+// allocate once and keep the pixels between frames
+var buffer: [800 * 600 * 4]u8 align(4) = undefined;
+
 // per frame: run it, then draw only what changed into your pixels
 const commands = try rt.frame(Root, props, viewport, now);
-var buffer: [800 * 600 * 4]u8 align(4) = undefined;
 try fabrum.layout.draw(&renderer, commands, .pixels, .packed_(&buffer, 800, 600, .rgba8_premultiplied), try rt.damage());
 ```
 
@@ -75,7 +77,9 @@ The pixel buffer must be 4-byte aligned and its stride a multiple of 4
 (`error.UnalignedPixels` otherwise), since ThorVG writes whole 32-bit
 pixels. `Surface.Pixels.packed_` describes a tightly packed buffer;
 `packedScaled` adds the scale (device pixels per point); for padded rows fill
-in `data`, `width`, `height`, `stride`, `format` and `scale` directly.
+in `data`, `width`, `height`, `stride`, `format` and `scale` directly. Keep
+the buffer between frames: a damage redraw leaves all other pixels as they
+were, and the first frame must draw the whole surface.
 
 `init` starts ThorVG's software engine (reference counted, so several
 renderers can share it) and makes one `SoftwareCanvas`; `deinit` releases
@@ -92,21 +96,29 @@ spills onto its neighbours. `content` draws text and pictures.
 the scissor's box, horizontally and/or vertically.
 
 **Text.** `loadFont(name, data)` hands a TrueType font to ThorVG's TTF loader
-(the data must outlive the renderer; ThorVG's font registry is per process,
-not per renderer). Text whose style names a `font_family` uses that font; the
+(the name and data must outlive the renderer; ThorVG's font registry is per
+process, so shared font data must stay alive until all users finish). Text whose style names a `font_family` uses that font; the
 first loaded is the default. `Renderer.Text` is the text content type for
 `app.Runtime`, measuring with ThorVG's own text bounds. Two constants in
 `content.zig` paper over the C API: `size_scale` (72/96, since ThorVG takes
 font sizes in points at 96 dpi) and `font_height` (1.15, an estimate of
 ascender plus descender over the size, since the C API exposes no font
-metrics; Go's is 1.14, Inter's 1.21).
+metrics; Go's is 1.14, Inter's 1.21). `font_weight` and
+`letter_spacing` are not applied; load a different face under its own
+family name for a different weight. There is no complex-script shaping or
+fallback between font families.
 
 **Pictures.** `content.Picture` wraps a `*thorvg.Picture` you loaded (with
 the bindings' `Picture.load` or `loadData`: SVG, TVG, Lottie) in a
 `fabrum.layout.Content`, with a `Style` of `fit_mode` (`contain`, `cover`,
-`crop`, `stretch`) and `alignment`. It measures to its fit within the layout's
-constraints and is drawn scaled uniformly to its box, from the box's top
-left. `renderer.picture(p, style)` makes one.
+`crop`, `stretch`) and `alignment` (defaults: `contain`, `center`). Make one
+with `var picture: Renderer.content.Picture = .{ .picture = p, .style = style };`
+and pass `&picture.content` as layout content, keeping both objects alive
+while they are used. The fit mode controls measurement; `cover` can measure
+larger than the constraints, so give it a clipping container when needed.
+Drawing always scales uniformly from the box's top left: `alignment` is
+currently ignored, and `stretch` does not stretch the drawing independently
+on each axis.
 
 **Damage.** For each region, the renderer points ThorVG's canvas at just that
 window of the pixel buffer (`tvg_swcanvas_set_target` with the buffer's
@@ -121,6 +133,11 @@ regions are never touched. Without a list the whole surface is redrawn.
 little-endian word, so `rgba8_premultiplied` is its `ABGR8888` and
 `bgra8_premultiplied` its `ARGB8888`.
 
+Load fonts before measuring text. Non-empty text with no loaded font (or
+an unknown `font_family`) fails measurement with `error.MeasureFailed`.
+`Renderer.Text` uses fabrum's width-before-height layout: its content defaults
+to `Content.limit = .ancestors`, then wraps at the width layout assigns.
+
 Errors: `error.UnsupportedSurface` for a surface other than `.pixels`,
 `error.UnsupportedFormat` for `gray8`, `error.UnalignedPixels`,
 `error.NoFontLoaded` when text is drawn before any `loadFont`.
@@ -131,16 +148,16 @@ Errors: `error.UnsupportedSurface` for a surface other than `.pixels`,
 zig build test
 ```
 
-Nine tests in the package, then the consumer app:
+The package tests and the consumer app:
 
 - the module's own, including `content/picture.zig`'s check that a picture
   measures to each fit mode within its constraints (skipped if the ThorVG
   build has no SVG loader);
-- six in `test/render_test.zig`: the renderer against fabrum's
+- `test/render_test.zig`: the renderer against fabrum's
   `layout.checkRenderer`, premultiplied colors in RGBA and BGRA order over a
   cleared surface, scissors and borders inside their box, text in the loaded
   font inside its box, redrawing only the damage giving the same pixels as a
-  full redraw, and `gray8` refused;
+  full redraw, scale 2, and `gray8` refused;
 - `test/consumer`, built and tested as its own package with its own
   `zig build test`: an app on the `none` platform draws a progress bar with
   ThorVG, sharing its fabrum with the renderer.
@@ -165,13 +182,9 @@ while; later builds are cached.
   buffer's right edge cannot satisfy (`stride * (h - 1) + w` is what is
   needed). This renderer calls `tvg_swcanvas_set_target` through the C API
   (`tvg.c`) instead.
-- In zig-thorvg-bindings, `Picture.loadRaw` does not compile when referenced:
-  its error switch names `error.OutOfMemory`, which `resultToError`'s error
-  set does not contain. Nothing here uses it: pictures are loaded with
-  `load` and `loadData`.
 
 ## Who uses it
 
 - [fabrum-kitchen](https://github.com/ssttevee/fabrum-kitchen)'s
-  `kitchen-none` can draw with it (`zig build run-none -Drenderer=thorvg`;
-  see the issue above).
+  `kitchen-none` can draw with it (`zig build run-none -Drenderer=thorvg -- --overlay`;
+  see the issue above). Its `gray8` e-ink mode is unsupported.

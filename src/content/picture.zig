@@ -5,6 +5,7 @@ const thorvg = @import("thorvg");
 const LayoutContent = fabrum.layout.Content;
 const Vec2 = fabrum.Vec2;
 
+/// The loaded picture, borrowed for as long as this content is used.
 picture: *thorvg.Picture,
 style: Style = .{},
 content: LayoutContent = .{
@@ -20,6 +21,9 @@ pub const FitMode = enum {
     stretch,
 };
 
+/// The fit mode controls measurement. Drawing currently scales uniformly
+/// from the laid-out box's top left, ignoring `alignment`; `stretch` only
+/// stretches the measured size. Clip the container to crop a `cover` image.
 pub const Style = struct {
     fit_mode: FitMode = .contain,
     alignment: fabrum.layout.Alignment = .center,
