@@ -152,3 +152,52 @@ test "at scale 2 a point is two pixels, and gray8 is refused" {
     var gray: [size * size]u8 align(4) = @splat(0);
     try testing.expectError(error.UnsupportedFormat, layout.draw(&renderer, &commands, .pixels, .packed_(&gray, size, size, .gray8), null));
 }
+
+test "pictures fit and align on both axes, clipped to their box" {
+    var renderer: Renderer = try .init(testing.allocator);
+    defer renderer.deinit();
+    const picture = try Renderer.tvg.Picture.init();
+    defer picture.deinit();
+    picture.loadData("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path fill=\"red\" d=\"M0 0H4V4H0Z\"/><path fill=\"blue\" d=\"M4 0H8V4H4Z\"/></svg>", "svg", true) catch |err| switch (err) {
+        error.NotSupported => return error.SkipZigTest,
+        else => return err,
+    };
+    const original = picture.asPaint().getTransform();
+    var canvas: Canvas = .{};
+    for ([_]Renderer.content.Picture.FitMode{ .contain, .cover, .crop, .stretch }) |fit| {
+        for ([_]layout.Gravity{ .start, .center, .end }) |ax| {
+            for ([_]layout.Gravity{ .start, .center, .end }) |ay| {
+                for ([_]Rect{ .init(16, 16, 16, 16), .init(16, 16, 4, 12) }) |box| {
+                    var content = renderer.picture(picture, .{ .fit_mode = fit, .alignment = .{ .x = ax, .y = ay } });
+                    const commands = [_]layout.RenderCommand{.{ .bbox = box, .data = .{ .content = &content.content } }};
+                    try layout.draw(&renderer, &commands, .pixels, canvas.pixels(.rgba8_premultiplied), null);
+                    const sx: f32 = switch (fit) {
+                        .contain => @min(box.w / 8, box.h / 4),
+                        .cover => @max(box.w / 8, box.h / 4),
+                        .crop => 1,
+                        .stretch => box.w / 8,
+                    };
+                    const sy = if (fit == .stretch) box.h / 4 else sx;
+                    const x0 = box.x + (box.w - 8 * sx) * alignmentFraction(ax);
+                    const y0 = box.y + (box.h - 4 * sy) * alignmentFraction(ay);
+                    for (0..size) |y| for (0..size) |x| {
+                        const px = @as(f32, @floatFromInt(x)) + 0.5;
+                        const py = @as(f32, @floatFromInt(y)) + 0.5;
+                        const inside = px >= box.x and px < box.x + box.w and py >= box.y and py < box.y + box.h and px >= x0 and px < x0 + 8 * sx and py >= y0 and py < y0 + 4 * sy;
+                        const expected: [4]u8 = if (!inside) .{ 0, 0, 0, 0 } else if (px < x0 + 4 * sx) .{ 255, 0, 0, 255 } else .{ 0, 0, 255, 255 };
+                        try testing.expectEqual(expected, canvas.at(x, y));
+                    };
+                }
+            }
+        }
+    }
+    try testing.expectEqual(original, picture.asPaint().getTransform());
+}
+
+fn alignmentFraction(gravity: layout.Gravity) f32 {
+    return switch (gravity) {
+        .start => 0,
+        .center => 0.5,
+        .end => 1,
+    };
+}

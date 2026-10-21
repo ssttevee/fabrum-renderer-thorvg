@@ -21,9 +21,10 @@ pub const FitMode = enum {
     stretch,
 };
 
-/// The fit mode controls measurement. Drawing currently scales uniformly
-/// from the laid-out box's top left, ignoring `alignment`; `stretch` only
-/// stretches the measured size. Clip the container to crop a `cover` image.
+/// Controls measurement and drawing within the laid-out box. `contain`
+/// fits uniformly, `cover` fills uniformly, `crop` keeps the original size,
+/// and `stretch` fills each axis independently. Alignment positions the
+/// result (including overflow); drawing is clipped to the box.
 pub const Style = struct {
     fit_mode: FitMode = .contain,
     alignment: fabrum.layout.Alignment = .center,

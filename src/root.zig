@@ -283,11 +283,48 @@ fn renderText(self: *Renderer, scene: *tvg.Scene, bbox: Rect, text_content: *con
 }
 
 fn renderPicture(scene: *tvg.Scene, bbox: Rect, picture_content: *const content.Picture) !void {
+    if (bbox.w <= 0 or bbox.h <= 0) return;
+    const bounds = picture_content.picture.asPaint().getBounds(false);
+    if (bounds.w <= 0 or bounds.h <= 0) return;
+    const style = picture_content.style;
+    const sx = bbox.w / bounds.w;
+    const sy = bbox.h / bounds.h;
+    const scale = switch (style.fit_mode) {
+        .contain => @min(sx, sy),
+        .cover => @max(sx, sy),
+        .crop => 1,
+        .stretch => sx,
+    };
+    const scale_y = if (style.fit_mode == .stretch) sy else scale;
+    const x = bbox.x + alignedOffset(bbox.w - bounds.w * scale, style.alignment.x);
+    const y = bbox.y + alignedOffset(bbox.h - bounds.h * scale_y, style.alignment.y);
+
+    const clipped = try tvg.Scene.init();
+    scene.push(clipped.asPaint());
+    const clip = try tvg.Shape.init();
+    clip.appendRect(bbox.x, bbox.y, bbox.w, bbox.h, 0, 0);
+    try clipped.asPaint().setClip(clip.asPaint());
     const paint = picture_content.picture.asPaint().duplicate() orelse return error.OutOfMemory;
-    scene.push(paint);
-    const bounds = paint.getBounds(false);
-    paint.translate(bbox.x, bbox.y);
-    paint.scale(@min(bbox.w / bounds.w, bbox.h / bounds.h));
+    clipped.push(paint);
+    paint.setTransform(&.{
+        .e11 = scale,
+        .e12 = 0,
+        .e13 = x - bounds.x * scale,
+        .e21 = 0,
+        .e22 = scale_y,
+        .e23 = y - bounds.y * scale_y,
+        .e31 = 0,
+        .e32 = 0,
+        .e33 = 1,
+    });
+}
+
+fn alignedOffset(space: f32, gravity: fabrum.layout.Gravity) f32 {
+    return switch (gravity) {
+        .start => 0,
+        .center => space / 2,
+        .end => space,
+    };
 }
 
 /// The distance of a cubic Bézier's control points from a quarter

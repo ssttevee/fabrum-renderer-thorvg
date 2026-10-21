@@ -116,9 +116,10 @@ with `var picture: Renderer.content.Picture = .{ .picture = p, .style = style };
 and pass `&picture.content` as layout content, keeping both objects alive
 while they are used. The fit mode controls measurement; `cover` can measure
 larger than the constraints, so give it a clipping container when needed.
-Drawing always scales uniformly from the box's top left: `alignment` is
-currently ignored, and `stretch` does not stretch the drawing independently
-on each axis.
+Drawing uses the laid-out box: `contain` fits uniformly inside it, `cover`
+fills it uniformly, `crop` retains the original size, and `stretch` scales
+each axis independently. `alignment` positions the image inside the box
+(and chooses which overflow is cropped). Every mode clips to the box.
 
 **Damage.** For each region, the renderer points ThorVG's canvas at just that
 window of the pixel buffer (`tvg_swcanvas_set_target` with the buffer's
@@ -157,7 +158,8 @@ The package tests and the consumer app:
   `layout.checkRenderer`, premultiplied colors in RGBA and BGRA order over a
   cleared surface, scissors and borders inside their box, text in the loaded
   font inside its box, redrawing only the damage giving the same pixels as a
-  full redraw, scale 2, and `gray8` refused;
+  full redraw, scale 2, `gray8` refused, and pixel checks of all picture fit
+  modes with all nine alignments in wide and tall boxes, clipped to the box;
 - `test/consumer`, built and tested as its own package with its own
   `zig build test`: an app on the `none` platform draws a progress bar with
   ThorVG, sharing its fabrum with the renderer.
