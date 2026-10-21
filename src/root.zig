@@ -40,6 +40,8 @@ pub const content = @import("content.zig");
 
 gpa: std.mem.Allocator,
 canvas: *tvg.SoftwareCanvas,
+/// Full-sized target keeps raster coordinates identical for every damage region.
+scratch: std.ArrayList(u32) = .empty,
 text_context: content.Text.Context,
 /// Scenes for the clips in force while building a region's scene.
 clip_stack: std.ArrayList(*tvg.Scene) = .empty,
@@ -70,6 +72,7 @@ pub fn init(gpa: std.mem.Allocator) !Renderer {
 
 pub fn deinit(self: *Renderer) void {
     self.canvas.deinit();
+    self.scratch.deinit(self.gpa);
     self.clip_stack.deinit(self.gpa);
     self.text_buf.deinit(self.gpa);
     self.text_context.deinit();
@@ -103,9 +106,9 @@ pub fn render(self: *Renderer, commands: []const RenderCommand, surface: Surface
     for (damage orelse &whole) |region| try self.renderRegion(commands, pixels, region);
 }
 
-/// Clears and redraws one region (in points) of `pixels`: ThorVG targets
-/// just those pixels, and draws everything scaled and moved by the
-/// region's origin.
+/// Redraws one region (in points) in surface coordinates, then copies just
+/// that region back. Translating a partial target changes ThorVG's curve
+/// quantization and can produce different antialiasing from a full redraw.
 fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surface.Pixels, region: Rect) !void {
     const s = pixels.scale;
     const w: f32 = @floatFromInt(pixels.width);
@@ -116,8 +119,7 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
     const y1: u32 = @intFromFloat(std.math.clamp(@ceil((region.y + region.h) * s), 0, h));
     if (x1 <= x0 or y1 <= y0) return;
 
-    const stride = pixels.stride / 4;
-    const words: [*]u32 = @ptrCast(@alignCast(pixels.data.ptr));
+    try self.scratch.resize(self.gpa, @as(usize, pixels.width) * pixels.height);
     const colorspace: tvg.Colorspace = switch (pixels.format) {
         // ThorVG names channels from the most significant byte of a
         // little-endian word: ABGR is the bytes R, G, B, A
@@ -125,34 +127,30 @@ fn renderRegion(self: *Renderer, commands: []const RenderCommand, pixels: Surfac
         .bgra8_premultiplied => .argb8888,
         .gray8 => unreachable, // refused by `render`
     };
-    // through the C API: the binding wants the whole of the last row, which
-    // a region short of the right edge doesn't have
-    switch (tvg.c.tvg_swcanvas_set_target(@ptrCast(self.canvas), words + @as(usize, y0) * stride + x0, stride, x1 - x0, y1 - y0, @backingInt(colorspace))) {
-        tvg.c.TVG_RESULT_SUCCESS => {},
-        tvg.c.TVG_RESULT_INVALID_ARGUMENT => return error.InvalidArgument,
-        // drawing: the canvas wasn't synced
-        tvg.c.TVG_RESULT_INSUFFICIENT_CONDITION => return error.InsufficientCondition,
-        tvg.c.TVG_RESULT_NOT_SUPPORTED => return error.NotSupported,
-        else => return error.SetTargetFailed,
-    }
+    try self.canvas.setTarget(self.scratch.items, pixels.width, pixels.width, pixels.height, colorspace);
+    const canvas = self.canvas.asCanvas();
+    canvas.setViewport(@intCast(x0), @intCast(y0), @intCast(x1 - x0), @intCast(y1 - y0));
 
     const scene = try tvg.Scene.init();
     // pushed to the canvas, which then owns it
     var pushed = false;
     errdefer if (!pushed) scene.deinit();
-    // the area in points, for what touches it; the transform scales
-    // points to pixels and moves the area's origin to the target's
+    // Cull commands in points, but keep the same transform as a full draw.
     const area: Rect = .init(@as(f32, @floatFromInt(x0)) / s, @as(f32, @floatFromInt(y0)) / s, @as(f32, @floatFromInt(x1 - x0)) / s, @as(f32, @floatFromInt(y1 - y0)) / s);
     try self.build(scene, commands, area);
-    scene.asPaint().setTransform(&.{ .e11 = s, .e12 = 0, .e13 = -@as(f32, @floatFromInt(x0)), .e21 = 0, .e22 = s, .e23 = -@as(f32, @floatFromInt(y0)), .e31 = 0, .e32 = 0, .e33 = 1 });
+    scene.asPaint().setTransform(&.{ .e11 = s, .e12 = 0, .e13 = 0, .e21 = 0, .e22 = s, .e23 = 0, .e31 = 0, .e32 = 0, .e33 = 1 });
 
-    const canvas = self.canvas.asCanvas();
     try canvas.push(scene.asPaint());
     pushed = true;
-    // ThorVG clears the target before it draws
+    // ThorVG clears the whole scratch target, even with a viewport.
     canvas.draw();
     _ = canvas.sync();
     canvas.clear(true);
+    const bytes = std.mem.sliceAsBytes(self.scratch.items);
+    for (y0..y1) |y| {
+        const start = (y * pixels.width + x0) * 4;
+        @memcpy(pixels.row(@intCast(y))[x0 * 4 .. x1 * 4], bytes[start..][0 .. (x1 - x0) * 4]);
+    }
 }
 
 /// Adds the commands that touch `area` to `root`.
@@ -164,7 +162,13 @@ fn build(self: *Renderer, root: *tvg.Scene, commands: []const RenderCommand, are
         const scene = if (self.clip_stack.items.len > 0) self.clip_stack.getLast() else root;
         switch (cmd.data) {
             .scissor_start => |s| {
-                if (skipped > 0 or !overlaps(cmd.bbox, area)) {
+                const clip_box: Rect = .init(
+                    if (s.horizontal) cmd.bbox.x else area.x,
+                    if (s.vertical) cmd.bbox.y else area.y,
+                    if (s.horizontal) cmd.bbox.w else area.w,
+                    if (s.vertical) cmd.bbox.h else area.h,
+                );
+                if (skipped > 0 or !overlaps(clip_box, area)) {
                     skipped += 1;
                     continue;
                 }

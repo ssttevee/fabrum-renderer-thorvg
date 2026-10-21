@@ -121,14 +121,16 @@ fills it uniformly, `crop` retains the original size, and `stretch` scales
 each axis independently. `alignment` positions the image inside the box
 (and chooses which overflow is cropped). Every mode clips to the box.
 
-**Damage.** For each region, the renderer points ThorVG's canvas at just that
-window of the pixel buffer (`tvg_swcanvas_set_target` with the buffer's
-stride), builds a scene from the commands that touch the region (a margin
-accounts for anti-aliasing and overhanging glyphs), and draws it with a
-transform that scales points to pixels and moves the region's origin to the
-target's. ThorVG clears its target before drawing, and the target is only
-that window, so the region is redrawn from scratch and pixels outside the
-regions are never touched. Without a list the whole surface is redrawn.
+**Damage.** For each region, the renderer builds the commands that touch it
+(with a margin for anti-aliasing and overhanging glyphs), and draws through a
+viewport into a reusable full-surface scratch target. Coordinates and the
+scale transform stay identical to a full redraw: translating a smaller
+target changes ThorVG's curve quantization and can change antialiased pixels.
+Only the region is copied back to the host's buffer; pixels outside the
+regions are never touched. ThorVG clears the whole scratch target each time,
+so scratch storage costs four bytes per surface pixel even for small damage.
+Without a damage list the whole surface is redrawn. Scissors cull only on
+the axes they enable, including nested single-axis clips.
 
 **Formats.** ThorVG names channels from the most significant byte of a
 little-endian word, so `rgba8_premultiplied` is its `ABGR8888` and
@@ -158,7 +160,8 @@ The package tests and the consumer app:
   `layout.checkRenderer`, premultiplied colors in RGBA and BGRA order over a
   cleared surface, scissors and borders inside their box, text in the loaded
   font inside its box, redrawing only the damage giving the same pixels as a
-  full redraw, scale 2, `gray8` refused, and pixel checks of all picture fit
+  full redraw (including fractional curves at several damage origins and
+  scales, and nested single-axis clips), scale 2, `gray8` refused, and pixel checks of all picture fit
   modes with all nine alignments in wide and tall boxes, clipped to the box;
 - `test/consumer`, built and tested as its own package with its own
   `zig build test`: an app on the `none` platform draws a progress bar with
@@ -169,27 +172,11 @@ only when this package is built as the root, so apps that depend on the
 renderer never fetch it. The first build compiles ThorVG (C++), which takes a
 while; later builds are cached.
 
-## Known issues
-
-- [fabrum-kitchen](https://github.com/ssttevee/fabrum-kitchen)'s
-  `zig build run-none -Drenderer=thorvg` fails with `error.DamageMissed`, and
-  its `zig build test -Dplatform=none -Drenderer=thorvg` fails the one test
-  that plays the same script: the Kitchen's `none` host redraws everything
-  after every step and compares it with what redrawing only the damage gave,
-  and with this renderer the two differ (they match with the z2d renderer,
-  and this package's own, smaller damage test passes). Pre-existing; not yet
-  traced.
-- In zig-thorvg-bindings, `SoftwareCanvas.setTarget` asserts
-  `buffer.len >= stride * h`, which a target window that stops short of the
-  buffer's right edge cannot satisfy (`stride * (h - 1) + w` is what is
-  needed). This renderer calls `tvg_swcanvas_set_target` through the C API
-  (`tvg.c`) instead.
-
 ## Who uses it
 
 - [fabrum-kitchen](https://github.com/ssttevee/fabrum-kitchen)'s
   `kitchen-none` can draw with it (`zig build run-none -Drenderer=thorvg -- --overlay`;
-  see the issue above). Its `gray8` e-ink mode is unsupported.
+  with the current renderer). Its `gray8` e-ink mode is unsupported.
 
 The package manifest includes the test sources, fonts, and consumer build
 files (excluding the consumer's generated caches), so a fetched copy can run

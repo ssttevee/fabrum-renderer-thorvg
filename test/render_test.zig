@@ -201,3 +201,49 @@ fn alignmentFraction(gravity: layout.Gravity) f32 {
         .end => 1,
     };
 }
+
+test "fractional curves keep identical antialiasing across damage origins" {
+    var renderer: Renderer = try .init(testing.allocator);
+    defer renderer.deinit();
+    var full: Canvas = .{};
+    var partial: Canvas = .{};
+    const commands = [_]layout.RenderCommand{
+        rectangle(0, 0, 64, 64, .white, 0),
+        rectangle(18.3, 24.7, 22.6, 14.2, .rgba(123, 98, 42, 200), 6.3),
+        rectangle(32.0 / 3.0, 47.0 / 3.0, 29.4, 30.6, .rgba(40, 80, 160, 128), 8.2),
+    };
+    for ([_]f32{ 1, 1.5, 2 }) |scale| {
+        var pixels = full.pixels(.rgba8_premultiplied);
+        pixels.scale = scale;
+        try layout.draw(&renderer, &commands, .pixels, pixels, null);
+        for (1..25) |origin| {
+            partial.buffer = full.buffer;
+            pixels = partial.pixels(.rgba8_premultiplied);
+            pixels.scale = scale;
+            const offset = @as(f32, @floatFromInt(origin)) / scale;
+            const edge = @as(f32, size) / scale;
+            try layout.draw(&renderer, &commands, .pixels, pixels, &.{.init(offset, offset, edge - offset, edge - offset)});
+            try testing.expectEqualSlices(u8, &full.buffer, &partial.buffer);
+        }
+    }
+}
+
+test "damage culls scissors only on their enabled axes, including nested clips" {
+    var renderer: Renderer = try .init(testing.allocator);
+    defer renderer.deinit();
+    var canvas: Canvas = .{};
+    const commands = [_]layout.RenderCommand{
+        .{ .bbox = .init(10, 0, 20, 1), .data = .{ .scissor_start = .{ .horizontal = true, .vertical = false } } },
+        .{ .bbox = .init(0, 20, 1, 20), .data = .{ .scissor_start = .{ .horizontal = false, .vertical = true } } },
+        rectangle(0, 0, 64, 64, .black, 0),
+        .{ .data = .scissor_end },
+        .{ .data = .scissor_end },
+    };
+    var full: Canvas = .{};
+    try layout.draw(&renderer, &commands, .pixels, full.pixels(.rgba8_premultiplied), null);
+    @memset(&canvas.buffer, 77);
+    try layout.draw(&renderer, &commands, .pixels, canvas.pixels(.rgba8_premultiplied), &.{.init(8, 18, 24, 24)});
+    for (18..42) |y| for (8..32) |x| try testing.expectEqual(full.at(x, y), canvas.at(x, y));
+    try testing.expectEqual(255, canvas.at(15, 25)[3]);
+    try testing.expectEqual([4]u8{ 77, 77, 77, 77 }, canvas.at(7, 25));
+}
