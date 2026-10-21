@@ -20,5 +20,10 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "test/render_test.zig",
+        "test/fonts",
+        "test/consumer/build.zig",
+        "test/consumer/build.zig.zon",
+        "test/consumer/main.zig",
     },
 }

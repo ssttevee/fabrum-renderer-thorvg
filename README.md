@@ -188,3 +188,7 @@ while; later builds are cached.
 - [fabrum-kitchen](https://github.com/ssttevee/fabrum-kitchen)'s
   `kitchen-none` can draw with it (`zig build run-none -Drenderer=thorvg -- --overlay`;
   see the issue above). Its `gray8` e-ink mode is unsupported.
+
+The package manifest includes the test sources, fonts, and consumer build
+files (excluding the consumer's generated caches), so a fetched copy can run
+`zig build test` (including the consumer app where present).
